@@ -8,12 +8,13 @@ from typing import Dict
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
-import cv2
 from bluesky import RunEngine
 from bluesky.protocols import Descriptor, Reading, Status, SyncOrAsync
 from ophyd import Component, Device, DeviceStatus, Signal
 
 from PhysicalCamera import VideoCaptureSignal
+
+import h5py
 
 os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH")
 
@@ -32,14 +33,15 @@ class LaptopCamera(Device):
     def trigger(self) -> Status:
         image = self.camera.get()
         self.count.set(self.count.get() + 1)
-        saved_location = str(
-            Path(self.directory.get())
-            / (self.filename.get() + f"_{self.count.get()}.png")
-        )
+        path_to_data = "/%d" % self.count.get()
 
-        cv2.imwrite(saved_location, image)
+        file_loc: Path = Path(self.directory.get()) / (self.filename.get() + ".h5py")
+        mode = "w" if not file_loc.is_file() else "r+"
 
-        self.queue.put(saved_location)
+        with h5py.File(str(file_loc), mode) as h5_file:
+            h5_file.create_dataset(path_to_data, data=image)
+
+        self.queue.put(path_to_data)
         status = DeviceStatus(self)
         status.set_finished()
         return status
@@ -70,13 +72,10 @@ lpc = LaptopCamera(name="lpc")
 RE = RunEngine()
 
 
-def take_picture():
-    yield from bps.abs_set(
-        lpc.directory, "/home/rose/Documents/projects/ophyd-test/webcam"
-    )
+def take_pictures():
+    yield from bps.abs_set(lpc.directory, "/home/rose/Documents/projects/camera/webcam")
     yield from bps.abs_set(lpc.filename, "test")
+    yield from bp.count([lpc], num=10, delay=1)
 
-    yield from bp.count([lpc], num=50, delay=0.001)
 
-
-RE(take_picture(), lambda name, doc: pprint({"name": name, "doc": doc}))
+RE(take_pictures(), lambda name, doc: pprint({"name": name, "doc": doc}))

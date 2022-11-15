@@ -1,12 +1,8 @@
-#this literally just makes a class that makes an opencv2 camera, takes a pic every ms and saves that in a class attribute...
-from time import sleep
 import cv2
-from typing import Dict
 
-from queue import Queue
 import numpy as np
-from ophyd import SignalRO, DeviceStatus
-from bluesky.protocols import Status, SyncOrAsync, Reading
+from ophyd import SignalRO
+
 
 class VideoCaptureSignal(SignalRO):
     def __init__(self, camera_no: int = 0, **kwargs):
@@ -18,7 +14,7 @@ class VideoCaptureSignal(SignalRO):
         if has_image:
             return image
         else:
-            raise ValueError("oops!")        
-       
+            raise ValueError("oops!")
+
     def __del__(self):
         self.camera.release()
