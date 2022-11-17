@@ -1,24 +1,15 @@
-import os
 import time
+import uuid
+from collections import deque
 from datetime import datetime
 from pathlib import Path
-from pprint import pprint
 from typing import Dict, Iterator, List
-import uuid
-
-import bluesky.plan_stubs as bps
-import bluesky.plans as bp
-from bluesky import RunEngine
-from bluesky.protocols import Descriptor, Reading, Status, SyncOrAsync, Asset
-from ophyd import Component, Device, DeviceStatus, Signal
-
-from PhysicalCamera import VideoCaptureSignal
 
 import h5py
-import cv2
-from collections import deque
+from bluesky.protocols import Asset, Descriptor, Reading, Status, SyncOrAsync
+from ophyd import Component, Device, DeviceStatus, Signal
 
-os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH")
+from VideoCaptureSignal import VideoCaptureSignal
 
 
 class LaptopCamera(Device):
@@ -85,14 +76,13 @@ class LaptopCamera(Device):
         self.generate_resource({})
 
         self.h5_file = h5py.File(
-            str(Path(self.directory.get()) / self.resource_path), "w"
+            str(Path(self.directory.get()) / self.resource_path), "w", libver="latest"
         )
         return [self]
 
     def unstage(self) -> List["LaptopCamera"]:
         self.h5_file.close()
         self._asset_docs_cache.clear()
-        cv2.destroyAllWindows()
         return [self]
 
     def trigger(self) -> Status:
@@ -101,15 +91,15 @@ class LaptopCamera(Device):
         path_to_data = "%d" % self.count.get()
 
         self.h5_file.create_dataset(path_to_data, data=image)
-
-        cv2.imshow("video", image)
+        if not self.h5_file.swmr_mode:
+            self.h5_file.swmr_mode = True
 
         status = DeviceStatus(self)
         status.set_finished()
         return status
 
     def read(self) -> SyncOrAsync[Dict[str, Reading]]:
-        self.generate_datum({})
+        self.generate_datum({"location": "%d" % self.count.get()})
         datum_id = self.datum_factory({})
         result = {
             "value": Reading(
@@ -130,17 +120,3 @@ class LaptopCamera(Device):
         self._asset_docs_cache.clear()
         for item in items:
             yield item
-
-
-lpc = LaptopCamera(name="lpc")
-
-RE = RunEngine()
-
-
-def take_pictures():
-    yield from bps.abs_set(lpc.directory, "/home/rose/Documents/projects/camera/webcam")
-    yield from bps.abs_set(lpc.filename, "test")
-    yield from bp.count([lpc], num=10, delay=0.1)
-
-
-RE(take_pictures(), lambda name, doc: pprint({"name": name, "doc": doc}))
